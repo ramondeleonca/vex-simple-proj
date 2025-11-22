@@ -1,5 +1,13 @@
 #include "main.h"
+#include "lemlib/chassis/chassis.hpp"
+#include "lemlib/chassis/trackingWheel.hpp"
+#include "pros/abstract_motor.hpp"
 #include "pros/motor_group.hpp"
+#include <cstdlib>
+#include <sys/types.h>
+#include <vector>
+#include "lemlib/api.hpp" // IWYU pragma: keep
+#include "pros/motors.hpp"
 
 /**
  * A callback function for LLEMU's center button.
@@ -17,6 +25,20 @@ void on_center_button() {
 	}
 }
 
+// Controller
+pros::Controller master(pros::E_CONTROLLER_MASTER);
+
+// Chassis
+pros::MotorGroup left_mg({1, 2, 3, 4, -5}, pros::MotorGearset::blue, pros::MotorUnits::rotations);
+pros::MotorGroup right_mg({-6, -7, 8, -9, -10}, pros::MotorGearset::blue, pros::MotorUnits::rotations);
+// lemlib::Drivetrain chassis(&left_mg, &right_mg, 15, lemlib::Omniwheel::NEW_2, 10, 2);
+
+// Conveyor
+pros::MotorGroup conveyor_mg({-15, 16});
+
+// Intake
+pros::MotorGroup intake_mg({17, -18});
+
 /**
  * Runs initialization code. This occurs as soon as the program is started.
  *
@@ -24,9 +46,14 @@ void on_center_button() {
  * to keep execution time for this mode under a few seconds.
  */
 void initialize() {
+	left_mg.set_brake_mode(pros::MotorBrake::brake);
+	left_mg.set_gearing(pros::MotorGears::blue);
+
+	right_mg.set_brake_mode(pros::MotorBrake::brake);
+	right_mg.set_gearing(pros::MotorGears::blue);
+
 	pros::lcd::initialize();
 	pros::lcd::set_text(1, "Hello PROS User!");
-
 	pros::lcd::register_btn1_cb(on_center_button);
 }
 
@@ -59,41 +86,41 @@ void competition_initialize() {}
  * will be stopped. Re-enabling the robot will restart the task, not re-start it
  * from where it left off.
  */
-void autonomous() {}
+void autonomous() {
+	left_mg.move_velocity(64);
+	right_mg.move_velocity(64);
 
-/**
- * Runs the operator control code. This function will be started in its own task
- * with the default priority and stack size whenever the robot is enabled via
- * the Field Management System or the VEX Competition Switch in the operator
- * control mode.
- *
- * If no competition control is connected, this function will run immediately
- * following initialize().
- *
- * If the robot is disabled or communications is lost, the
- * operator control task will be stopped. Re-enabling the robot will restart the
- * task, not resume it from where it left off.
- */
+	pros::delay(5000);
+
+	left_mg.move_velocity(0);
+	right_mg.move_velocity(0);
+}
+
+int applyDeadband(int input, int deadband) {
+	if (abs(input) < deadband) return 0;
+	return input;
+}
+
 void opcontrol() {
-	pros::Controller master(pros::E_CONTROLLER_MASTER);
-	pros::MotorGroup left_mg({1, -2, -3, -4, -5});
-	pros::MotorGroup right_mg({6, 7, -8, 9, 10});
-	pros::MotorGroup intake_mg({17, -18});
-
 	while (true) {
 		// Arcade control scheme
-		int dir = master.get_analog(ANALOG_LEFT_Y);
-		int turn = master.get_analog(ANALOG_RIGHT_X);
-		left_mg.move(dir - turn);
-		right_mg.move(dir + turn);
+		int dir = applyDeadband(master.get_analog(ANALOG_LEFT_Y), 2);
+		int turn = applyDeadband(master.get_analog(ANALOG_RIGHT_X), 2);
+
+		left_mg.move(dir + turn);
+		right_mg.move(dir - turn);
+
 
 		// Intake control
-		if (master.get_digital(DIGITAL_R1)) {
+		if (master.get_digital(DIGITAL_L1)) {
 			intake_mg.move(127);
-		} else if (master.get_digital(DIGITAL_R2)) {
+			conveyor_mg.move(127);
+		} else if (master.get_digital(DIGITAL_R1)) {
 			intake_mg.move(-127);
+			conveyor_mg.move(-127);
 		} else {
 			intake_mg.move(0);
+			conveyor_mg.move(0);
 		}
 
 		pros::delay(20);
